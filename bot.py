@@ -1,7 +1,7 @@
 import logging
-import sqlite3
 import os
 import threading
+import psycopg2
 from flask import Flask
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
@@ -9,7 +9,22 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, fil
 # 设置管理员 Telegram ID
 ADMIN_ID = 1373704387  
 
-# 1. 极简 Flask HTTP 服务器（保持 Render 存活）
+# 获取数据库连接串
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+def get_db_connection():
+    if DATABASE_URL:
+        # 给链接自动加上 sslmode=require 防断连
+        url = DATABASE_URL
+        if "sslmode=" not in url:
+            separator = "&" if "?" in url else "?"
+            url = f"{url}{separator}sslmode=require"
+        return psycopg2.connect(url, connect_timeout=10)
+    else:
+        import sqlite3
+        return sqlite3.connect("users.db")
+
+# 1. 极简 Flask HTTP 服务器
 app_flask = Flask(__name__)
 
 @app_flask.route('/')
@@ -20,33 +35,68 @@ def run_flask():
     port = int(os.environ.get("PORT", 10000))
     app_flask.run(host='0.0.0.0', port=port)
 
-# 2. Telegram Bot 逻辑
+# 2. 初始化数据库
 def init_db():
-    conn = sqlite3.connect("users.db")
-    cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            user_id INTEGER PRIMARY KEY,
-            username TEXT,
-            first_name TEXT
-        )
-    """)
-    conn.commit()
-    conn.close()
+    if DATABASE_URL:
+        print("🔗 成功检测到 DATABASE_URL，正在连接 Supabase PostgreSQL 数据库...")
+    else:
+        print("⚠️ 未检测到 DATABASE_URL，回退使用本地 SQLite 数据库！")
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        if DATABASE_URL:
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    user_id BIGINT PRIMARY KEY,
+                    username TEXT,
+                    first_name TEXT
+                );
+            """)
+        else:
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    user_id INTEGER PRIMARY KEY,
+                    username TEXT,
+                    first_name TEXT
+                )
+            """)
+        conn.commit()
+        cursor.close()
+        conn.close()
+        print("✅ 数据库初始化/建表成功！")
+    except Exception as e:
+        print(f"❌ 数据库初始化失败: {e}")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    conn = sqlite3.connect("users.db")
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT OR REPLACE INTO users (user_id, username, first_name) VALUES (?, ?, ?)",
-        (user.id, user.username, user.first_name)
-    )
-    conn.commit()
-    conn.close()
-    await update.message.reply_text(
-        f"你好 {user.first_name}！欢迎关注 Winverse，你已成功订阅我们的最新通知！"
-    )
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        if DATABASE_URL:
+            cursor.execute("""
+                INSERT INTO users (user_id, username, first_name)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (user_id) DO UPDATE 
+                SET username = EXCLUDED.username, first_name = EXCLUDED.first_name;
+            """, (user.id, user.username, user.first_name))
+        else:
+            cursor.execute(
+                "INSERT OR REPLACE INTO users (user_id, username, first_name) VALUES (?, ?, ?)",
+                (user.id, user.username, user.first_name)
+            )
+            
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        await update.message.reply_text(
+            f"你好 {user.first_name}！欢迎关注 Winverse，你已成功订阅我们的最新通知！"
+        )
+    except Exception as e:
+        print(f"❌ /start 写入数据库失败: {e}")
+        await update.message.reply_text(f"你好 {user.first_name}！欢迎关注 Winverse！")
 
 async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"你的 Telegram ID 是: {update.effective_user.id}")
@@ -58,13 +108,17 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⛔ 只有管理员可以查看统计数据！")
         return
 
-    conn = sqlite3.connect("users.db")
-    cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM users")
-    count = cursor.fetchone()[0]
-    conn.close()
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM users;")
+        count = cursor.fetchone()[0]
+        cursor.close()
+        conn.close()
 
-    await update.message.reply_text(f"📊 **Winverse Bot 当前订阅统计**\n\n目前共有 **{count}** 位订阅用户。")
+        await update.message.reply_text(f"📊 **Winverse Bot 当前订阅统计**\n\n目前共有 **{count}** 位订阅用户。")
+    except Exception as e:
+        await update.message.reply_text(f"⚠️ 读取数据库失败: {e}")
 
 # 📋 查看具体订阅者名单
 async def users_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -73,25 +127,29 @@ async def users_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⛔ 只有管理员可以查看用户名单！")
         return
 
-    conn = sqlite3.connect("users.db")
-    cursor = conn.cursor()
-    cursor.execute("SELECT user_id, username, first_name FROM users")
-    users = cursor.fetchall()
-    conn.close()
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT user_id, username, first_name FROM users;")
+        users = cursor.fetchall()
+        cursor.close()
+        conn.close()
 
-    if not users:
-        await update.message.reply_text("ℹ️ 目前还没有任何用户订阅。")
-        return
+        if not users:
+            await update.message.reply_text("ℹ️ 目前还没有任何用户订阅。")
+            return
 
-    text = f"👥 **Winverse Bot 订阅者名单 (共 {len(users)} 人)**\n\n"
-    for idx, (u_id, username, first_name) in enumerate(users, 1):
-        name_str = first_name if first_name else "未设定姓名"
-        user_str = f"@{username}" if username else "无 Username"
-        text += f"{idx}. **{name_str}** ({user_str}) - ID: `{u_id}`\n"
+        text = f"👥 **Winverse Bot 订阅者名单 (共 {len(users)} 人)**\n\n"
+        for idx, (u_id, username, first_name) in enumerate(users, 1):
+            name_str = first_name if first_name else "未设定姓名"
+            user_str = f"@{username}" if username else "无 Username"
+            text += f"{idx}. **{name_str}** ({user_str}) - ID: `{u_id}`\n"
 
-    await update.message.reply_text(text, parse_mode="Markdown")
+        await update.message.reply_text(text, parse_mode="Markdown")
+    except Exception as e:
+        await update.message.reply_text(f"⚠️ 读取名单失败: {e}")
 
-# 📢 支持“纯文字”或“图片+文字”的广播函数
+# 📢 广播函数
 async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sender_id = update.effective_user.id
     if ADMIN_ID != 0 and sender_id != ADMIN_ID:
@@ -103,18 +161,22 @@ async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not caption_or_text or not caption_or_text.startswith("/broadcast"):
         return
 
-    # 自动清洗文字：去除 /broadcast 以及后面多打的冒号或空格
     message_text = caption_or_text.replace("/broadcast", "", 1).lstrip(" :：")
 
     if not message_text and not msg.photo:
         await msg.reply_text("⚠️ 请输入广播内容！")
         return
 
-    conn = sqlite3.connect("users.db")
-    cursor = conn.cursor()
-    cursor.execute("SELECT user_id FROM users")
-    users = cursor.fetchall()
-    conn.close()
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT user_id FROM users;")
+        users = cursor.fetchall()
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        await msg.reply_text(f"⚠️ 广播获取用户失败: {e}")
+        return
 
     if not users:
         await msg.reply_text("ℹ️ 目前没有任何用户订阅，无法发送广播。")
@@ -160,6 +222,5 @@ if __name__ == '__main__':
     bot_app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r'^/broadcast'), handle_broadcast))
     bot_app.add_handler(MessageHandler(filters.PHOTO, handle_broadcast))
 
-    print("🤖 Winverse Bot Web 模式启动成功！")
+    print("🤖 Winverse Bot 启动成功！")
     bot_app.run_polling()
-
