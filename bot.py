@@ -227,3 +227,4 @@ if __name__ == '__main__':
     # 2. 主线程运行 Flask，防止 Render 主进程退出
     port = int(os.environ.get("PORT", 10000))
     app_flask.run(host='0.0.0.0', port=port)
+
