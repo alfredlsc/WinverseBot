@@ -224,3 +224,4 @@ if __name__ == '__main__':
 
     print("🤖 Winverse Bot 启动成功！")
     bot_app.run_polling()
+
