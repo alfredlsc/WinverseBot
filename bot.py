@@ -51,6 +51,21 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"你的 Telegram ID 是: {update.effective_user.id}")
 
+# 📊 新增：查询订阅者数量功能
+async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    sender_id = update.effective_user.id
+    if ADMIN_ID != 0 and sender_id != ADMIN_ID:
+        await update.message.reply_text("⛔ 只有管理员可以查看统计数据！")
+        return
+
+    conn = sqlite3.connect("users.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM users")
+    count = cursor.fetchone()[0]
+    conn.close()
+
+    await update.message.reply_text(f"📊 **Winverse Bot 当前订阅统计**\n\n目前共有 **{count}** 位订阅用户。")
+
 async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sender_id = update.effective_user.id
     if ADMIN_ID != 0 and sender_id != ADMIN_ID:
@@ -98,6 +113,7 @@ if __name__ == '__main__':
     bot_app = ApplicationBuilder().token(token).build()
     bot_app.add_handler(CommandHandler("start", start))
     bot_app.add_handler(CommandHandler("id", get_id))
+    bot_app.add_handler(CommandHandler("stats", stats))
     bot_app.add_handler(CommandHandler("broadcast", broadcast))
 
     print("🤖 Winverse Bot Web 模式启动成功！")
