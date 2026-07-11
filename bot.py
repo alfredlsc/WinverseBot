@@ -9,7 +9,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 # 设置管理员 Telegram ID
 ADMIN_ID = 1373704387  
 
-# 1. 建立极构 Flask HTTP 服务器（给 Render 检查存活）
+# 1. 建立极简 Flask HTTP 服务器（专门给 Render 检查存活）
 app_flask = Flask(__name__)
 
 @app_flask.route('/')
@@ -128,7 +128,7 @@ if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
     init_db()
 
-    # 后台线程启动 Web 端口，满足 Render Free 要求
+    # 在后台线程启动 Web 端口，满足 Render Free 要求
     t = threading.Thread(target=run_flask)
     t.daemon = True
     t.start()
