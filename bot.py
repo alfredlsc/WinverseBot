@@ -9,7 +9,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 # 设置管理员 Telegram ID
 ADMIN_ID = 1373704387  
 
-# 1. 建立极简 Flask HTTP 服务器（专门给 Render 检查存活）
+# 1. 建立极构 Flask HTTP 服务器（给 Render 检查存活）
 app_flask = Flask(__name__)
 
 @app_flask.route('/')
@@ -51,7 +51,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"你的 Telegram ID 是: {update.effective_user.id}")
 
-# 📊 新增：查询订阅者数量功能
+# 📊 统计订阅人数
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sender_id = update.effective_user.id
     if ADMIN_ID != 0 and sender_id != ADMIN_ID:
@@ -65,6 +65,31 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.close()
 
     await update.message.reply_text(f"📊 **Winverse Bot 当前订阅统计**\n\n目前共有 **{count}** 位订阅用户。")
+
+# 📋 查看具体订阅者名单（用户名 + 姓名）
+async def users_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    sender_id = update.effective_user.id
+    if ADMIN_ID != 0 and sender_id != ADMIN_ID:
+        await update.message.reply_text("⛔ 只有管理员可以查看用户名单！")
+        return
+
+    conn = sqlite3.connect("users.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT user_id, username, first_name FROM users")
+    users = cursor.fetchall()
+    conn.close()
+
+    if not users:
+        await update.message.reply_text("ℹ️ 目前还没有任何用户订阅。")
+        return
+
+    text = f"👥 **Winverse Bot 订阅者名单 (共 {len(users)} 人)**\n\n"
+    for idx, (u_id, username, first_name) in enumerate(users, 1):
+        name_str = first_name if first_name else "未设定姓名"
+        user_str = f"@{username}" if username else "无 Username"
+        text += f"{idx}. **{name_str}** ({user_str}) - ID: `{u_id}`\n"
+
+    await update.message.reply_text(text, parse_mode="Markdown")
 
 async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sender_id = update.effective_user.id
@@ -103,7 +128,7 @@ if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
     init_db()
 
-    # 在后台线程启动 Web 端口，满足 Render Free 要求
+    # 后台线程启动 Web 端口，满足 Render Free 要求
     t = threading.Thread(target=run_flask)
     t.daemon = True
     t.start()
@@ -114,6 +139,7 @@ if __name__ == '__main__':
     bot_app.add_handler(CommandHandler("start", start))
     bot_app.add_handler(CommandHandler("id", get_id))
     bot_app.add_handler(CommandHandler("stats", stats))
+    bot_app.add_handler(CommandHandler("users", users_list))
     bot_app.add_handler(CommandHandler("broadcast", broadcast))
 
     print("🤖 Winverse Bot Web 模式启动成功！")
