@@ -1,5 +1,6 @@
 import logging
 import os
+import asyncio
 import threading
 import psycopg2
 from flask import Flask
@@ -14,7 +15,6 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 def get_db_connection():
     if DATABASE_URL:
-        # 给链接自动加上 sslmode=require 防断连
         url = DATABASE_URL
         if "sslmode=" not in url:
             separator = "&" if "?" in url else "?"
@@ -30,10 +30,6 @@ app_flask = Flask(__name__)
 @app_flask.route('/')
 def home():
     return "Winverse Bot is Running Alive!"
-
-def run_flask():
-    port = int(os.environ.get("PORT", 10000))
-    app_flask.run(host='0.0.0.0', port=port)
 
 # 2. 初始化数据库
 def init_db():
@@ -203,15 +199,10 @@ async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"✅ 广播完成！\n成功发送：{success_count} 人\n失败/封锁：{fail_count} 人"
     )
 
-if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO)
-    init_db()
-
-    t = threading.Thread(target=run_flask)
-    t.daemon = True
-    t.start()
-
-    token = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
+def run_bot():
+    token = os.getenv("BOT_TOKEN")
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     
     bot_app = ApplicationBuilder().token(token).build()
     bot_app.add_handler(CommandHandler("start", start))
@@ -222,6 +213,17 @@ if __name__ == '__main__':
     bot_app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r'^/broadcast'), handle_broadcast))
     bot_app.add_handler(MessageHandler(filters.PHOTO, handle_broadcast))
 
-    print("🤖 Winverse Bot 启动成功！")
-    bot_app.run_polling()
+    print("🤖 Winverse Bot 线程启动...")
+    bot_app.run_polling(stop_signals=None)
 
+if __name__ == '__main__':
+    logging.basicConfig(level=logging.INFO)
+    init_db()
+
+    # 1. 在后台线程启动 Bot
+    bot_thread = threading.Thread(target=run_bot, daemon=True)
+    bot_thread.start()
+
+    # 2. 主线程运行 Flask，防止 Render 主进程退出
+    port = int(os.environ.get("PORT", 10000))
+    app_flask.run(host='0.0.0.0', port=port)
