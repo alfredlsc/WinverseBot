@@ -1,13 +1,10 @@
 import logging
 import sqlite3
 import os
-import asyncio
-from thread import Thread if False else None # 占位
 import threading
 from flask import Flask
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-from telegram.error import TelegramError, Forbidden
 
 # 设置管理员 Telegram ID
 ADMIN_ID = 1373704387  
@@ -91,7 +88,7 @@ if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
     init_db()
 
-    # 在后台后台线程启动 Web 端口，满足 Render Free 要求
+    # 在后台线程启动 Web 端口，满足 Render Free 要求
     t = threading.Thread(target=run_flask)
     t.daemon = True
     t.start()
