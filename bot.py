@@ -4,12 +4,12 @@ import os
 import threading
 from flask import Flask
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
 # 设置管理员 Telegram ID
 ADMIN_ID = 1373704387  
 
-# 1. 建立极简 Flask HTTP 服务器（专门给 Render 检查存活）
+# 1. 极简 Flask HTTP 服务器（保持 Render 存活）
 app_flask = Flask(__name__)
 
 @app_flask.route('/')
@@ -66,7 +66,7 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(f"📊 **Winverse Bot 当前订阅统计**\n\n目前共有 **{count}** 位订阅用户。")
 
-# 📋 查看具体订阅者名单（用户名 + 姓名）
+# 📋 查看具体订阅者名单
 async def users_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sender_id = update.effective_user.id
     if ADMIN_ID != 0 and sender_id != ADMIN_ID:
@@ -91,15 +91,23 @@ async def users_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(text, parse_mode="Markdown")
 
-async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# 📢 支持“纯文字”或“图片+文字”的广播函数
+async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sender_id = update.effective_user.id
     if ADMIN_ID != 0 and sender_id != ADMIN_ID:
-        await update.message.reply_text("⛔ 只有管理员可以使用广播功能！")
         return
 
-    message_text = " ".join(context.args)
-    if not message_text:
-        await update.message.reply_text("⚠️ 请输入广播内容！\n格式如：/broadcast 今晚8点活动开始！")
+    msg = update.message
+    caption_or_text = msg.caption if msg.photo else msg.text
+
+    if not caption_or_text or not caption_or_text.startswith("/broadcast"):
+        return
+
+    # 自动清洗文字：去除 /broadcast 以及后面多打的冒号或空格
+    message_text = caption_or_text.replace("/broadcast", "", 1).lstrip(" :：")
+
+    if not message_text and not msg.photo:
+        await msg.reply_text("⚠️ 请输入广播内容！")
         return
 
     conn = sqlite3.connect("users.db")
@@ -108,19 +116,28 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     users = cursor.fetchall()
     conn.close()
 
+    if not users:
+        await msg.reply_text("ℹ️ 目前没有任何用户订阅，无法发送广播。")
+        return
+
     success_count = 0
     fail_count = 0
-    await update.message.reply_text(f"📢 开始向 {len(users)} 位用户发送广播...")
+    await msg.reply_text(f"📢 开始向 {len(users)} 位用户发送广播...")
+
+    photo_file_id = msg.photo[-1].file_id if msg.photo else None
 
     for user in users:
         user_id = user[0]
         try:
-            await context.bot.send_message(chat_id=user_id, text=message_text)
+            if photo_file_id:
+                await context.bot.send_photo(chat_id=user_id, photo=photo_file_id, caption=message_text)
+            else:
+                await context.bot.send_message(chat_id=user_id, text=message_text)
             success_count += 1
         except Exception:
             fail_count += 1
 
-    await update.message.reply_text(
+    await msg.reply_text(
         f"✅ 广播完成！\n成功发送：{success_count} 人\n失败/封锁：{fail_count} 人"
     )
 
@@ -128,7 +145,6 @@ if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
     init_db()
 
-    # 在后台线程启动 Web 端口，满足 Render Free 要求
     t = threading.Thread(target=run_flask)
     t.daemon = True
     t.start()
@@ -140,7 +156,9 @@ if __name__ == '__main__':
     bot_app.add_handler(CommandHandler("id", get_id))
     bot_app.add_handler(CommandHandler("stats", stats))
     bot_app.add_handler(CommandHandler("users", users_list))
-    bot_app.add_handler(CommandHandler("broadcast", broadcast))
+    
+    bot_app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r'^/broadcast'), handle_broadcast))
+    bot_app.add_handler(MessageHandler(filters.PHOTO, handle_broadcast))
 
     print("🤖 Winverse Bot Web 模式启动成功！")
     bot_app.run_polling()
