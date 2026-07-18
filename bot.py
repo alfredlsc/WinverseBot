@@ -116,7 +116,7 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"⚠️ 读取数据库失败: {e}")
 
-# 📋 查看具体订阅者名单
+# 📋 查看具体订阅者名单（已修复 Markdown 语法解析崩溃问题）
 async def users_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sender_id = update.effective_user.id
     if ADMIN_ID != 0 and sender_id != ADMIN_ID:
@@ -135,11 +135,23 @@ async def users_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("ℹ️ 目前还没有任何用户订阅。")
             return
 
+        # 核心修复方案：定义一个过滤特殊字符的辅助函数，防止 Markdown 崩溃
+        def escape_markdown(text_to_escape):
+            if not text_to_escape:
+                return ""
+            # 过滤掉容易引起 Markdown 语法解析错误的符号
+            for char in ["_", "*", "`", "[", "]"]:
+                text_to_escape = text_to_escape.replace(char, "")
+            return text_to_escape
+
         text = f"👥 **Winverse Bot 订阅者名单 (共 {len(users)} 人)**\n\n"
         for idx, (u_id, username, first_name) in enumerate(users, 1):
-            name_str = first_name if first_name else "未设定姓名"
-            user_str = f"@{username}" if username else "无 Username"
-            text += f"{idx}. **{name_str}** ({user_str}) - ID: `{u_id}`\n"
+            # 对读取出来的名字和用户名进行安全过滤
+            safe_name = escape_markdown(first_name) if first_name else "未设定姓名"
+            safe_username = escape_markdown(username) if username else "无 Username"
+            
+            user_str = f"@{safe_username}" if username else "无 Username"
+            text += f"{idx}. **{safe_name}** ({user_str}) - ID: `{u_id}`\n"
 
         await update.message.reply_text(text, parse_mode="Markdown")
     except Exception as e:
