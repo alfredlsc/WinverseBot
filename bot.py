@@ -98,10 +98,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         '👉 <b>安卓 Android 系统</b> 可以点击 <a href="https://winverse.asia/register?referral=eByKKQ">按此链接开局</a>'
     )
 
-    # 设置底部的 [🚀 安卓 Android系统 立即开局] 按钮（点击会弹窗跳网页链接）
+    # 设置底部的 [🚀 立即开局] 按钮（点击会弹窗跳网页链接）
     keyboard = [
         [
-            InlineKeyboardButton("🚀 立即开局", url="https://winverse.asia/register?referral=eByKKQ")
+            InlineKeyboardButton("🚀 安卓 Android 按这里 立即开局", url="https://winverse.asia/register?referral=eByKKQ")
         ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
