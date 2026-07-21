@@ -4,7 +4,7 @@ import asyncio
 import threading
 import psycopg2
 from flask import Flask
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
 # 设置管理员 Telegram ID
@@ -64,6 +64,7 @@ def init_db():
     except Exception as e:
         print(f"❌ 数据库初始化失败: {e}")
 
+# 3. 处理 /start 命令（按照你指定的文案 + 超链接 + 弹出链接的大按钮）
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     try:
@@ -87,12 +88,31 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cursor.close()
         conn.close()
         
-        await update.message.reply_text(
-            f"你好 {user.first_name}！欢迎关注 Winverse，你已成功订阅我们的最新通知！"
-        )
     except Exception as e:
         print(f"❌ /start 写入数据库失败: {e}")
-        await update.message.reply_text(f"你好 {user.first_name}！欢迎关注 Winverse！")
+
+    # 设置文案（使用 HTML 语法把“按此链接开局”变成可点击的蓝字链接）
+    welcome_text = (
+        "🔥<b>欢迎关注 Winverse！你已成功订阅我们的最新通知！</b>🔥\n\n"
+        "🍎 <b>苹果 iOS 系统</b> 可以直接点击按钮开局\n"
+        '👉 <b>安卓 Android 系统</b> 可以点击 <a href="https://winverse.asia/register?referral=eByKKQ">按此链接开局</a>'
+    )
+
+    # 设置底部的 [🚀 立即开局] 按钮（点击会弹窗跳网页链接）
+    keyboard = [
+        [
+            InlineKeyboardButton("🚀 立即开局", url="https://winverse.asia/register?referral=eByKKQ")
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    # 发送消息并生效格式与按钮
+    await update.message.reply_text(
+        text=welcome_text,
+        parse_mode='HTML',
+        reply_markup=reply_markup,
+        disable_web_page_preview=True  # 关闭下方的大网页小卡片预览，保持聊天界面整洁
+    )
 
 async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"你的 Telegram ID 是: {update.effective_user.id}")
@@ -116,7 +136,7 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"⚠️ 读取数据库失败: {e}")
 
-# 📋 查看具体订阅者名单（已修复 Markdown 语法解析崩溃问题）
+# 📋 查看具体订阅者名单
 async def users_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sender_id = update.effective_user.id
     if ADMIN_ID != 0 and sender_id != ADMIN_ID:
@@ -135,18 +155,15 @@ async def users_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("ℹ️ 目前还没有任何用户订阅。")
             return
 
-        # 核心修复方案：定义一个过滤特殊字符的辅助函数，防止 Markdown 崩溃
         def escape_markdown(text_to_escape):
             if not text_to_escape:
                 return ""
-            # 过滤掉容易引起 Markdown 语法解析错误的符号
             for char in ["_", "*", "`", "[", "]"]:
                 text_to_escape = text_to_escape.replace(char, "")
             return text_to_escape
 
         text = f"👥 **Winverse Bot 订阅者名单 (共 {len(users)} 人)**\n\n"
         for idx, (u_id, username, first_name) in enumerate(users, 1):
-            # 对读取出来的名字和用户名进行安全过滤
             safe_name = escape_markdown(first_name) if first_name else "未设定姓名"
             safe_username = escape_markdown(username) if username else "无 Username"
             
@@ -239,4 +256,3 @@ if __name__ == '__main__':
     # 2. 主线程运行 Flask，防止 Render 主进程退出
     port = int(os.environ.get("PORT", 10000))
     app_flask.run(host='0.0.0.0', port=port)
-
