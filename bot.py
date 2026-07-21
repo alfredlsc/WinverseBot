@@ -94,7 +94,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # 设置文案（使用 HTML 语法把“按此链接开局”变成可点击的蓝字链接）
     welcome_text = (
         "🔥<b>欢迎关注 Winverse！你已成功订阅我们的最新通知！</b>🔥\n\n"
-        "🍎 <b>苹果 iOS 系统</b> 可以直接点击按钮开局\n"
+        "🍎 <b>苹果 iOS 系统</b> 可以直接点击🚀进入牛牛游戏按钮开局\n"
         '👉 <b>安卓 Android 系统</b> 可以点击 <a href="https://winverse.asia/register?referral=eByKKQ">按此链接开局</a>'
     )
 
