@@ -64,7 +64,7 @@ def init_db():
     except Exception as e:
         print(f"❌ 数据库初始化失败: {e}")
 
-# 3. 处理 /start 命令（按照你指定的文案 + 超链接 + 弹出链接的大按钮）
+# 3. 处理 /start 命令（多排按钮 + 自动识别文案）
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     try:
@@ -91,27 +91,33 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         print(f"❌ /start 写入数据库失败: {e}")
 
-    # 设置文案（使用 HTML 语法把“按此链接开局”变成可点击的蓝字链接）
+    # 引导文案
     welcome_text = (
         "🔥<b>欢迎关注 Winverse！你已成功订阅我们的最新通知！</b>🔥\n\n"
         "🍎 <b>苹果 iOS 系统</b> 可以直接点击🚀进入牛牛游戏按钮开局\n"
         '👉 <b>安卓 Android 系统</b> 可以点击 <a href="https://winverse.asia/register?referral=eByKKQ">按此链接开局</a>'
     )
 
-    # 设置底部的 [🚀 立即开局] 按钮（点击会弹窗跳网页链接）
+    # 底部内联按钮矩阵
     keyboard = [
         [
-            InlineKeyboardButton("🚀 安卓 Android 按这里 立即开局", url="https://winverse.asia/register?referral=eByKKQ")
+            InlineKeyboardButton("🚀牛牛游戏极速注册开局！", url="https://t.me/Winverse_Gaming_Bot")
+        ],
+        [
+            InlineKeyboardButton("🔥Winverse 官方群优惠通知群！", url="https://t.me/winverse_of")
+        ],
+        [
+            InlineKeyboardButton("🐂官方牛牛吹水群1", url="https://t.me/qmsl996/146481"),
+            InlineKeyboardButton("🐂官方牛牛吹水群2", url="https://t.me/winverseasia/2")
         ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    # 发送消息并生效格式与按钮
     await update.message.reply_text(
         text=welcome_text,
         parse_mode='HTML',
         reply_markup=reply_markup,
-        disable_web_page_preview=True  # 关闭下方的大网页小卡片预览，保持聊天界面整洁
+        disable_web_page_preview=True
     )
 
 async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -228,6 +234,11 @@ async def handle_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"✅ 广播完成！\n成功发送：{success_count} 人\n失败/封锁：{fail_count} 人"
     )
 
+# 自动清除旧 Webhook 机制，彻底避免 Conflict 冲突
+async def clear_webhook_and_start(bot_app):
+    await bot_app.bot.delete_webhook(drop_pending_updates=True)
+    print("🧹 已成功清理旧的 Webhook，准备启动 Polling...")
+
 def run_bot():
     token = os.getenv("BOT_TOKEN")
     loop = asyncio.new_event_loop()
@@ -241,6 +252,9 @@ def run_bot():
     
     bot_app.add_handler(MessageHandler(filters.TEXT & filters.Regex(r'^/broadcast'), handle_broadcast))
     bot_app.add_handler(MessageHandler(filters.PHOTO, handle_broadcast))
+
+    # 启动前强行删除 Webhook
+    loop.run_until_complete(clear_webhook_and_start(bot_app))
 
     print("🤖 Winverse Bot 线程启动...")
     bot_app.run_polling(stop_signals=None)
